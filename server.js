@@ -43,50 +43,79 @@ function normalizeAmount(rawAmountStr) {
 
 
 function classifyAndStructure(ocrText) {
-    console.log("Step 3 & 4: Classifying amounts and structuring final output...");
+    console.log("Step 3 & 4 (Improved): Classifying amounts and structuring final output...");
 
-    // Define keywords and their corresponding types
+    // More detailed rules to capture different types of amounts
     const classificationRules = {
-        total_bill: /\b(total|t0tal|net amount|grand total)\b[\s:.-]*((?:[rR][sS]\.?\s*)?[\d,lO.]+)/i,
-        paid:       /\b(paid|pald|cash|received)\b[\s:.-]*((?:[rR][sS]\.?\s*)?[\d,lO.]+)/i,
-        due:        /\b(due|balance|amount due)\b[\s:.-]*((?:[rR][sS]\.?\s*)?[\d,lO.]+)/i,
+        total_bill: ['Gross Amount'],
+        subtotal: ['Total net', 'Fare', 'Net Amount'],
+        tax: ['Total CGST Amount', 'Total SGST/UTGST Amount', 'CGST', 'SGST', 'UTGST'],
     };
-    
-    // Find currency hints
+
+    // Find currency hints (same as before)
     const currencyMatch = ocrText.match(/\b(INR|Rs\.?|₹)\b/i);
-    const currency = currencyMatch ? "INR" : "UNKNOWN"; // Default or derived currency
+    const currency = currencyMatch ? "INR" : "UNKNOWN";
 
     const amounts = [];
-    const foundValues = new Set();
+    const foundLines = new Set(); // To avoid processing a line more than once
 
-    for (const type in classificationRules) {
-        const regex = classificationRules[type];
-        const match = ocrText.match(regex);
-        
-        if (match && match[2]) {
-            const rawValue = match[2];
-            const normalizedValue = normalizeAmount(rawValue);
-            
-            // Avoid adding duplicate values if multiple keywords match the same number
-            if (normalizedValue !== null && !foundValues.has(normalizedValue)) {
-                amounts.push({
-                    type: type,
-                    value: normalizedValue,
-                    source: `text: '${match[0].trim()}'` // Provenance
-                });
-                foundValues.add(normalizedValue);
+    // Split the entire OCR text into individual lines
+    const lines = ocrText.split('\n').filter(line => line.trim() !== '');
+
+    // Iterate through each line of the document
+    for (const line of lines) {
+        if (foundLines.has(line)) continue;
+
+        // For each line, check against our classification rules
+        for (const type in classificationRules) {
+            const keywords = classificationRules[type];
+
+            for (const keyword of keywords) {
+                // Use a regex to see if the keyword exists on this line
+                const keywordRegex = new RegExp(`\\b${keyword}\\b`, 'i');
+                if (keywordRegex.test(line)) {
+                    
+                    // If a keyword is found, find a monetary value ON THE SAME LINE
+                    // This regex looks for numbers like 20.49, 819.70, or 860.68
+                    const amountMatch = line.match(/(\d{1,3}(?:,?\d{3})*(?:\.\d{2}))/);
+
+                    if (amountMatch && amountMatch[0]) {
+                        const value = parseFloat(amountMatch[0].replace(/,/g, ''));
+                        
+                        if (!isNaN(value)) {
+                            amounts.push({
+                                type: type,
+                                value: value,
+                                source: `text: '${line.trim()}'`
+                            });
+                            foundLines.add(line); // Mark this line as processed
+                            break; // Stop looking for other keywords on this line
+                        }
+                    }
+                }
             }
+            if (foundLines.has(line)) break; // Move to the next line
         }
     }
 
-    // Guardrail / Exit Condition
-    if (amounts.length === 0) {
+    // Deduplicate results - OCR can sometimes see the same text twice.
+    // This creates a unique list based on the type and value.
+    const uniqueAmounts = [...new Map(amounts.map(item => [item.source, item])).values()];
+    
+    // Sort the results for consistency, putting the total bill last
+    uniqueAmounts.sort((a, b) => {
+        if (a.type === 'total_bill') return 1;
+        if (b.type === 'total_bill') return -1;
+        return 0;
+    });
+
+    if (uniqueAmounts.length === 0) {
         return { status: "no_amounts_found", reason: "Could not identify any classified amounts from the document." };
     }
 
     return {
         currency: currency,
-        amounts: amounts,
+        amounts: uniqueAmounts,
         status: "ok"
     };
 }
