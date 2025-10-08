@@ -132,18 +132,18 @@ You must have [Node.js](https://nodejs.org/) (version 16 or newer) installed on 
    npm install
    ```
 
-5. Set up backend environment variables:
+3. Set up backend environment variables:
    Create a `.env` file in the server directory and add the variable values which are present in .env.example file like below:
    ```env
    PORT=3000
    ```
 
-6. Start the backend server:
+4. Start the backend server:
    ```bash
    npm run dev
    ```
 
-7. You can test the service using a tool like Postman or the command-line tool curl.
+5. You can test the service using a tool like Postman or the command-line tool curl.
    Send a POST request with your image file to the /api/extract endpoint.
    ```bash
    # Make sure you have a bill image (e.g., bill.png) in the same directory
@@ -151,7 +151,7 @@ You must have [Node.js](https://nodejs.org/) (version 16 or newer) installed on 
         -F "billImage=@bill.png"
    ```
 
-8. The server will respond with a structured JSON object of expenses.
+6. The server will respond with a structured JSON object of expenses.
 
 ---
 
